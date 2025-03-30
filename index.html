@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piano por Sensores Móvil</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #sensor-ball {
+            width: 60px;
+            height: 60px;
+            background-color: #3B82F6;
+            border-radius: 50%;
+            position: absolute;
+            transition: transform 0.1s ease;
+            will-change: transform;
+        }
+        #visualizer-mode-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+        }
+        #controls {
+            transition: all 0.3s ease;
+        }
+        .fullscreen-ball {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            overflow: hidden;
+            background-color: #1F2937;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold mb-2">Piano por Sensores Móvil</h1>
+            <p class="text-lg">Controla el sonido con los movimientos de tu dispositivo</p>
+            <p class="text-sm mt-4 text-gray-600 dark:text-gray-400">Creado por Manuel Puebla Vega</p>
+        </header>
+
+        <div id="controls" class="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
+            <!-- Estado del audio -->
+            <div class="mb-6 bg-gray-200 dark:bg-gray-700 p-4 rounded-lg">
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <h3 class="font-medium">Frecuencia:</h3>
+                        <div id="frequency-display" class="text-2xl">440 Hz</div>
+                    </div>
+                    <div>
+                        <h3 class="font-medium">Volumen:</h3>
+                        <div id="volume-display" class="text-2xl">50%</div>
+                    </div>
+                </div>
+                <div class="flex justify-center space-x-4">
+                    <button id="start-btn" class="px-6 py-3 bg-green-600 text-white rounded-lg text-lg font-semibold">
+                        Iniciar Sonido
+                    </button>
+                    <button id="stop-btn" class="px-6 py-3 bg-red-600 text-white rounded-lg text-lg font-semibold" disabled>
+                        Detener Sonido
+                    </button>
+                </div>
+            </div>
+
+            <!-- Visualización del sensor -->
+            <div class="relative bg-gray-200 dark:bg-gray-700 rounded-lg p-4 mb-6" style="height: 200px;">
+                <div id="sensor-ball"></div>
+            </div>
+
+            <!-- Instrucciones -->
+            <div>
+                <h2 class="text-xl font-semibold mb-2">Instrucciones</h2>
+                <div class="prose dark:prose-invert">
+                    <ol class="list-decimal pl-5">
+                        <li>Presiona "Iniciar Sonido" para activar el audio</li>
+                        <li>Permite el acceso a los sensores cuando se solicite</li>
+                        <li>Mueve tu dispositivo para controlar el sonido:
+                            <ul class="list-disc pl-5 mt-2">
+                                <li><strong>Izquierda/Derecha:</strong> Cambia a notas agudas/graves</li>
+                                <li><strong>Adelante/Atrás:</strong> Controla el volumen</li>
+                            </ul>
+                        </li>
+                        <li>Presiona el botón "Modo Visualización" para solo ver el movimiento</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="visualizer-mode-btn" class="px-4 py-2 bg-purple-600 text-white rounded-lg shadow-lg">
+        Modo Visualización
+    </button>
+
+    <script>
+        // Variables globales
+        let audioContext;
+        let oscillator;
+        let gainNode;
+        let isPlaying = false;
+        let isVisualizerMode = false;
+        let currentFrequency = 440;
+        let currentVolume = 0.5;
+
+        // Elementos del DOM
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const visualizerModeBtn = document.getElementById('visualizer-mode-btn');
+        const frequencyDisplay = document.getElementById('frequency-display');
+        const volumeDisplay = document.getElementById('volume-display');
+        const sensorBall = document.getElementById('sensor-ball');
+        const app = document.getElementById('app');
+        const controls = document.getElementById('controls');
+
+        // Iniciar el sistema de audio
+        function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            oscillator = audioContext.createOscillator();
+            gainNode = audioContext.createGain();
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(currentFrequency, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(currentVolume, audioContext.currentTime);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start();
+            isPlaying = true;
+            
+            updateUI();
+        }
+
+        // Detener el sistema de audio
+        function stopAudio() {
+            if (oscillator) {
+                oscillator.stop();
+                oscillator.disconnect();
+                gainNode.disconnect();
+                isPlaying = false;
+            }
+        }
+
+        // Actualizar la interfaz de usuario
+        function updateUI() {
+            frequencyDisplay.textContent = currentFrequency.toFixed(2) + ' Hz';
+            volumeDisplay.textContent = Math.round(currentVolume * 100) + '%';
+            
+            startBtn.disabled = isPlaying;
+            stopBtn.disabled = !isPlaying;
+        }
+
+        // Mapear el rango de inclinación a frecuencia (200 Hz a 4000 Hz)
+        function mapTiltToFrequency(tilt) {
+            const minTilt = -45;
+            const maxTilt = 45;
+            const minFreq = 200;
+            const maxFreq = 4000;
+            
+            tilt = Math.max(minTilt, Math.min(maxTilt, tilt));
+            
+            // Escala logarítmica para mejor respuesta musical
+            const minLog = Math.log10(minFreq);
+            const maxLog = Math.log10(maxFreq);
+            const logFreq = minLog + (maxLog - minLog) * (tilt - minTilt) / (maxTilt - minTilt);
+            
+            return Math.pow(10, logFreq);
+        }
+
+        // Mapear el rango de inclinación a volumen (0 a 1)
+        function mapTiltToVolume(tilt) {
+            const minTilt = -30;
+            const maxTilt = 30;
+            
+            tilt = Math.max(minTilt, Math.min(maxTilt, tilt));
+            return (tilt - minTilt) / (maxTilt - minTilt);
+        }
+
+        // Manejar los datos del sensor de orientación
+        function handleOrientation(event) {
+            const beta = event.beta;  // Inclinación adelante/atrás
+            const gamma = event.gamma; // Inclinación izquierda/derecha
+            
+            // Posicionar la pelota
+            const x = ((gamma + 90) / 180) * 100;
+            const y = ((beta + 90) / 180) * 100;
+            
+            sensorBall.style.transform = `translate(calc(${x}% - 30px), calc(${y}% - 30px))`;
+            
+            // Solo actualizar el audio si no estamos en modo visualización y el audio está activo
+            if (!isVisualizerMode && isPlaying) {
+                currentFrequency = mapTiltToFrequency(gamma);
+                currentVolume = mapTiltToVolume(beta);
+                
+                if (oscillator) {
+                    oscillator.frequency.setValueAtTime(currentFrequency, audioContext.currentTime);
+                }
+                if (gainNode) {
+                    gainNode.gain.setValueAtTime(currentVolume, audioContext.currentTime);
+                }
+                
+                updateUI();
+            }
+        }
+
+        // Alternar el modo visualización
+        function toggleVisualizerMode() {
+            isVisualizerMode = !isVisualizerMode;
+            
+            if (isVisualizerMode) {
+                // Entrar en modo visualización
+                document.body.classList.add('fullscreen-ball');
+                controls.classList.add('hidden');
+                visualizerModeBtn.textContent = 'Volver al Modo Normal';
+                
+                // Hacer la pelota más grande
+                sensorBall.style.width = '100px';
+                sensorBall.style.height = '100px';
+                sensorBall.style.backgroundColor = '#EC4899';
+            } else {
+                // Salir del modo visualización
+                document.body.classList.remove('fullscreen-ball');
+                controls.classList.remove('hidden');
+                visualizerModeBtn.textContent = 'Modo Visualización';
+                
+                // Restaurar la pelota
+                sensorBall.style.width = '60px';
+                sensorBall.style.height = '60px';
+                sensorBall.style.backgroundColor = '#3B82F6';
+            }
+        }
+
+        // Event Listeners
+        startBtn.addEventListener('click', () => {
+            // En móviles, el audio debe iniciarse desde una interacción del usuario
+            if (!audioContext) {
+                initAudio();
+            } else if (!isPlaying) {
+                initAudio();
+            }
+            
+            // Solicitar permiso para los sensores en iOS 13+
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(response => {
+                        if (response === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                        } else {
+                            alert("Para una experiencia completa, permite el acceso a los sensores de movimiento.");
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            stopAudio();
+            updateUI();
+        });
+
+        visualizerModeBtn.addEventListener('click', toggleVisualizerMode);
+
+        // Precargar el audio en móviles
+        document.addEventListener('touchstart', function initAudioContext() {
+            if (!audioContext) {
+                // Creamos un contexto de audio inactivo para que pueda ser activado luego
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                audioContext.suspend();
+            }
+            document.removeEventListener('touchstart', initAudioContext);
+        }, { once: true });
+
+        // Manejar la pausa/restauración del audio cuando cambia la visibilidad de la página
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && audioContext) {
+                audioContext.suspend();
+            }
+        });
+    </script>
+</body>
+</html>
